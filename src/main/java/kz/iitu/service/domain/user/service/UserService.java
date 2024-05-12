@@ -3,7 +3,10 @@ package kz.iitu.service.domain.user.service;
 import kz.iitu.service.configuration.jwt.TokenUtils;
 import kz.iitu.service.domain.role.model.Role;
 import kz.iitu.service.domain.role.repository.RoleRepository;
+import kz.iitu.service.domain.user.model.Status;
 import kz.iitu.service.domain.user.model.User;
+import kz.iitu.service.domain.user.model.UserMongo;
+import kz.iitu.service.domain.user.repository.mongo.UserMongoRepository;
 import kz.iitu.service.domain.user.repository.UserRepository;
 import kz.iitu.service.ui.dto.user.mapper.UserMapper;
 import kz.iitu.service.ui.dto.user.request.LoginRequest;
@@ -13,6 +16,7 @@ import lombok.AllArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
 import java.util.Optional;
 
 @Service
@@ -20,6 +24,7 @@ import java.util.Optional;
 public class UserService {
 
     private final UserRepository repository;
+    private final UserMongoRepository mongoRepository;
     private final UserMapper userMapper;
     private final RoleRepository roleRepository;
 
@@ -28,7 +33,12 @@ public class UserService {
         if (userOptional.isPresent()) {
             return null;
         }
-        return repository.save(new User(userDataRequest.getUsername(), userDataRequest.getEmail(), userDataRequest.getPhone(), userDataRequest.getImageUrl(), userDataRequest.getPassword(), generateToken(userDataRequest.getEmail(), userDataRequest.getPassword())));
+        User user = new User(userDataRequest.getUsername(), userDataRequest.getEmail(), userDataRequest.getPhone(),
+                               userDataRequest.getImageUrl(), userDataRequest.getPassword(),
+                               generateToken(userDataRequest.getEmail(), userDataRequest.getPassword()));
+        UserMongo userMongo = new UserMongo(userDataRequest.getUsername(), userDataRequest.getUsername(), Status.ONLINE);
+        this.saveUser(userMongo);
+        return repository.save(user);
     }
 
     private Role getRole(User user) {
@@ -41,7 +51,7 @@ public class UserService {
             return ResponseEntity.badRequest().body("Email not registered");
         }
         User user = userOptional.get();
-        if (user.getPassword().equals(loginRequest.getPassword())) {
+        if (!user.getPassword().equals(loginRequest.getPassword())) {
             return ResponseEntity.badRequest().body("Wrong password");
         }
         user.setToken(generateToken(user.getEmail(), user.getPassword()));
@@ -84,5 +94,22 @@ public class UserService {
 
     private String generateToken(String email, String password) {
         return TokenUtils.generateUserToken(email, password);
+    }
+
+    public void saveUser(UserMongo userMongo) {
+        userMongo.setStatus(Status.ONLINE);
+        mongoRepository.save(userMongo);
+    }
+
+    public void disconnect(UserMongo userMongo) {
+        var storedUser = mongoRepository.findById(userMongo.getNickName()).orElse(null);
+        if (storedUser != null) {
+            storedUser.setStatus(Status.OFFLINE);
+            mongoRepository.save(storedUser);
+        }
+    }
+
+    public List<UserMongo> findConnectedUsers() {
+        return mongoRepository.findAllByStatus(Status.ONLINE);
     }
 }
